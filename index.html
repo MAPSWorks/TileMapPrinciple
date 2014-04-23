@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>All Blue</title>
+    <style>
+        #map{
+            border: 1px solid red;
+        }
+    </style>
+</head>
+<body>
+<canvas id="map" width="1024" height="768"></canvas>
+
+<script>
+    var GeoPoint = function(x,y){
+        this.x = x;
+        this.y = y;
+    }
+
+    var GeoBound = function(lefttop,rightbottom){
+        this.lefttop = lefttop;
+        this.rightbottom = rightbottom;
+    }
+
+    var Tile = function(){
+        this.x = 0;
+        this.y = 0;
+        this.z = 0;
+
+        this.image = new Image();
+        this.url = "";
+        this.loaded = false;
+
+
+        this.load = function(){
+            var that = this;
+            this.image.onload = function(){
+                that.loaded = true;
+            }
+
+            this.image.src = this.url;
+        }
+
+    }
+
+</script>
+<script>
+    var canvas;
+    var context;
+
+
+    canvas  = document.getElementById("map");
+    context = canvas.getContext("2d");
+    context.fillStyle = "#EEEEEE";
+    context.fillRect(0,0,canvas.clientWidth,canvas.clientHeight);
+
+
+
+    var _level = 8;
+    var _center = new GeoPoint(32989609.911655735,15189260.512717087);
+    var _viewSize = new GeoPoint(canvas.width,canvas.height);
+    var _bounds = new GeoBound(new GeoPoint(0,0),new GeoPoint(2*20037508.3427892, 2*20037508.3427892));
+    var _resolutions = new Array();
+    for(var i=0; i<23; i++){
+        _resolutions.push(((20037508.3427892 * 2.0) / 256.0 ) / (Math.pow(2.0,i)));
+    }
+    var _viewBounds = null;             //当前可视化区域
+    var _startTileX, _startTileY, _endTileX, _endTileY;         //需要下载的瓦片序号
+    var _startTilePositionX, _startTilePositionY;               //需要下载瓦片中最左上角的那个瓦片左上角的位置
+    var _distanceX, _distanceY;                                 //上边那个的位置与实际绘图区域的左上角的距离
+
+    var image;
+    var imgX = 0,imgY = 0,imgScale = 1;
+    var tileList = new Array();
+    var tempTileList = new Array();
+
+    function loadImage(){
+        getTiles();
+        drawImage();
+    }
+
+    function drawImage(){
+        context.clearRect(0,0,canvas.width,canvas.height);
+
+
+        for(var i = 0; i < tileList.length; i++){
+            var tile = tileList[i];
+
+            if(!tile.loaded) continue;
+
+            if(tile.z !== _level) {
+
+                tileList.splice(i,1);
+                i--;
+                continue;
+
+            }
+
+            //绘制他
+            context.drawImage(tile.image,
+                    -_distanceX + ((tile.x - _startTileX) * 256),
+                    -_distanceY + ((tile.y - _startTileY) * 256)
+            );
+            // tempTileList.push(tile);
+        }
+        // tileList = tempTileList;
+        // tempTileList = new Array();
+
+       //    context.drawImage(image,
+       //           0,0,image.width,image.height,
+       //           imgX,imgY,
+       //           image.width*imgScale,image.height*imgScale);;
+    }
+
+    function getTiles(){
+        caculateBounds();
+        for(var i = _startTileY; i < _endTileY; i++){
+            for(var j = _startTileX; j < _endTileX; j++){
+                var imgUrl = "http://mt"+ ((i+j)%3+1)
+                        +".google.cn/vt/lyrs="+ "s@140"
+                        +"&hl=zh-CN&gl=cn&x="+ j
+                        +"&y=" + i
+                        + "&z="+ _level
+                        +"&s=Galil";
+                var imgUrl2 = "http://mt2.google.cn/vt/x="+ j +"&y="+ i +"&z=" + _level;
+
+                var tile = new Tile();
+                tile.x = j;
+                tile.y = i;
+                tile.z = _level;
+                tile.url = imgUrl2;
+                tileList.push(tile);
+
+                tile.load.call(tile);
+            }
+        }
+    }
+
+    function caculateBounds(){
+        var width = canvas.clientWidth;
+        var height = canvas.clientHeight;
+        var resolution = _resolutions[_level];
+
+        var leftTopPoint = new GeoPoint(_center.x - (resolution * width/2.0),
+                                        _center.y - (resolution * height/2.0));
+        var rightBottomPoint = new GeoPoint(_center.x + (resolution * width/2.0),
+                                            _center.y + (resolution * height/2.0));
+        _viewBounds = new GeoBound(leftTopPoint,rightBottomPoint);
+
+        _startTileX = Math.floor(((_viewBounds.lefttop.x - _bounds.lefttop.x)/resolution)/256.0);
+        _startTileY = Math.floor(((_viewBounds.lefttop.y - _bounds.lefttop.y)/resolution)/256.0);
+        _endTileX   = Math.ceil(((_viewBounds.rightbottom.x - _bounds.lefttop.x)/resolution)/256.0);
+        _endTileY   = Math.ceil(((_viewBounds.rightbottom.y - _bounds.lefttop.y)/resolution)/256.0);
+
+        _startTilePositionX = _bounds.lefttop.x + (_startTileX * 256 * resolution);
+        _startTilePositionY = _bounds.lefttop.y + (_startTileY * 256 * resolution);
+
+        _distanceX = (_viewBounds.lefttop.x - _startTilePositionX)/resolution;
+        _distanceY = (_viewBounds.lefttop.y - _startTilePositionY)/resolution;
+    }
+
+    canvas.onmousewheel = canvas.onwheel = function(event){
+        console.log("onwhell");
+        var pos = windowToCanvas(canvas, event.clientX,event.clientY);
+        event.wheelDelta = event.wheelDelta ? event.wheelDelta : (event.deltaY*(-40));
+        if(event.wheelDelta > 0){
+           // imgScale *= 2;
+           // imgX = imgX*2 - pos.x;
+           // imgY = imgY*2 - pos.y;
+            if(_level >= 22){
+                _level = 22;
+            }
+            else{
+                _level += 1;
+            }
+
+        }else{
+            if (_level <= 2){
+                _level = 2;
+            }else{
+                _level -= 1;
+            }
+
+           // imgScale /= 2;
+           // imgX = imgX*0.5 + pos.x*0.5;
+           // imgY = imgY*0.5 + pos.y*0.5;
+        }
+
+        getTiles();
+    };
+
+    canvas.onmousedown = function(event){
+        console.log(event.clientX + "  " + event.clientY);
+        var pos = windowToCanvas(canvas,event.clientX,event.clientY);
+        canvas.onmousemove = function(event){
+            canvas.style.cursor = "move";
+            var pos1 = windowToCanvas(canvas, event.clientX, event.clientY);
+            var x = pos1.x - pos.x;
+            var y = pos1.y - pos.y;
+            pos = pos1;
+
+            _center.x -= (x * _resolutions[_level]);
+            _center.y -= (y * _resolutions[_level]);
+            getTiles();
+        };
+
+        canvas.onmouseup = function(event){
+            canvas.onmousemove = null;
+            canvas.onmouseup = null;
+            canvas.style.cursor = "default";
+        }
+    };
+
+    function windowToCanvas(canvas, x, y){
+        var bbox = canvas.getBoundingClientRect();
+        return{
+            x: x - bbox.left - (bbox.width - canvas.width)/2,
+            y: y - bbox.top - (bbox.height - canvas.height)/2
+        };
+    }
+
+
+    loadImage();
+    var interval = setInterval("drawImage()",50);
+
+
+</script>
+</body>
+</html>
